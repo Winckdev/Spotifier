@@ -1,11 +1,12 @@
-import youtube_dl
+from __future__ import unicode_literals
+import json
 import requests 
 import os
 import google_auth_oauthlib.flow
 import googleapiclient.discovery
 import googleapiclient.errors
+import youtube_dl
 
-from __future__ import unicode_literals
 from secrets import spotifyToken, spotifyUserId
 
 class CreatePlaylist:
@@ -25,6 +26,7 @@ class CreatePlaylist:
         client_secrets_file = "client_secret.json"
 
         # Get credentials and create an API client
+        scopes = ["https://www.googleapis.com/auth/youtube.readonly"]
         flow = google_auth_oauthlib.flow.InstalledAppFlow.from_client_secrets_file(
             client_secrets_file, scopes)
         credentials = flow.run_console()
@@ -35,8 +37,8 @@ class CreatePlaylist:
         return youtubeClient
 
     
-    def getPlaylist(self):
-        #Grab a youtube PLAYLIST 
+    def getPlaylistItems(self):
+        #Grab a youtube PLAYLIST first
         playlistList = []
 
 
@@ -46,9 +48,9 @@ class CreatePlaylist:
         )
         response = request.execute()
 
-        for key, item in enumerate(response["items"],start=1):
-            playlistId = item["id"]
-            playlistTitle = item["title"]
+        for key, items in enumerate(response["items"],start=1):
+            playlistId = items["id"]
+            playlistTitle = items["snippet"]["title"]
             playlistList.append([playlistId,playlistTitle])
 
             print(f"{key} - {playlistTitle}")
@@ -57,18 +59,16 @@ class CreatePlaylist:
         #Since python positions are 0-based...
         playPos = playNum - 1
 
-        return playlistList[playPos]
+        playlist = playlistList[playPos]
 
-    def getPlaylistItems(self):
-
-        #lets retrieve the videos information from the selected playlist
-        playlist = self.getPlaylist() 
         #Remember that "playlist" is just a list containg 2 items, playlistId and playlistTitle  
-        playlistID = self.playlist[0]
-
+        playlistID = playlist[0]
+        playlistName = playlist[1]
+        #nextPageToken
         request = self.youtubeClient.playlistItems().list(
             part="snippet,contentDetails",
-            playlistId=f"{playlistID}"
+            playlistId=f"{playlistID}",
+            maxResults=20
         )
 
         response = request.execute()
@@ -80,13 +80,15 @@ class CreatePlaylist:
 
             youtubeUrl = f"https://www.youtube.com/watch?v={videoId}"
 
-            video = youtube_dl.Youtube({}).extract_info(
+            video = youtube_dl.YoutubeDL({}).extract_info(
                 youtubeUrl, download=False
             )
 
+            print(key+1)
             songName = video["track"]
             artist = video["artist"]
 
+            print(f"{key} - This is the songName: {songName} This is the artist: {artist}")
 
             if songName is not None and artist is not None:
                 # save all important info and skip any missing song and artist
@@ -97,21 +99,23 @@ class CreatePlaylist:
                     "artist": artist,
 
                     # add the uri, easy to get song to put into playlist
-                    "spotify_uri": self.getSpotifyUri(songName, artist)
+                    "spotify_uri": self.getSpotifyUri(songName, artist,)
                 }
+            
 
+        return playlistName
 
         
-    def createPlaylist(self):
+    def createPlaylist(self,playlistName):
         
         request_body = json.dumps({
-            "name": f'{youtubePlaylist}",
-            "description": f"This is my {youtubePlaylist}",
+            "name": f"{playlistName}",
+            "description": f"This is my {playlistName} Playlist from Youtube",
             "public": True,
 
         })
 
-        query = f"https://api.spotify.com/v1/users/{}/playlists"
+        query = f"https://api.spotify.com/v1/users/{spotifyUserId}/playlists"
         response = requests.post(
             query,
             data=request_body,
@@ -127,7 +131,7 @@ class CreatePlaylist:
         return response_json["id"]
 
     def getSpotifyUri(self, songName, artist):
-        query = f"https://api.spotify.com/v1/search?query=track%3A{songName}+artist%3A{artist}&type=track&offset=0&limit=20"
+        query = f"https://api.spotify.com/v1/search?q=track%3A{songName}%20artist%3A{artist}&type=track&offset=0&limit=20"
 
         response = requests.get(
             query,
@@ -137,22 +141,48 @@ class CreatePlaylist:
             }
         )
 
-        response_json = response.json()
-        songs = respose_json["tracks"]["items"]
+        responseJson = response.json()
+        songs = responseJson["tracks"]["items"]
 
         uri = songs[0]["uri"]
 
         return uri
 
     def addSongToPlaylist(self):
+        #Populate dictionary
+        playlistName = self.getPlaylistItems()
+
+        #Collect all of Uris
+        uris = [info["spotify_uri"]
+            for song,info in self.allSongInfo.items()]
+
+        #Create a new playlist
+        playlistId = self.createPlaylist(playlistName)
+
+        #add all songs into new playlist
+        requestData = json.dumps(uris)
+        print(requestData)
+
+        query = f"https://api.spotify.com/v1/playlists/{playlistId}/tracks"
+
+        response = requests.post(
+            query,
+            data=requestData,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {spotifyToken}"
+            }
+        )
+
+
+        responseJson = response.json()
+        return responseJson
+
+
+    #Se não a música não existe no spotify, vamos baixar ela
+    def DownloadToSpotify(self):
         pass
 
-
-#Se não a música não existe no spotify, vamos baixar ela
-ydl_opts = {}
-with youtube_dl.YoutubeDL(ydl_opts) as ydl:
-    ydl.download(['https://www.youtube.com/watch?v=BaW_jenozKc'])
-
-
 if __name__ == "__main__":
-    main()
+    cp = CreatePlaylist()
+    cp.addSongToPlaylist()
