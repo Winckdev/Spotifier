@@ -1,5 +1,5 @@
 # Spotifier
-A python program that "converts" a youtube playlist to a spotify playlist. Heavily inspired by TheComeUpCode's SpotifyGeneratePlaylist*
+A python program that "converts" a youtube playlist to a spotify playlist. Heavily inspired/copied by TheComeUpCode's SpotifyGeneratePlaylist*
 
 This is my first attempt at messing around with youtube's and spotify's apis. I feel like there are a lot of useful programs that can reduce our time spent in searching the same song twice in two different music apps, but besides wanting to create my own, I didn't find a py. script that when a youtube song/video doesn't exist in spotify, it downloads it and puts in your local playlist
 
